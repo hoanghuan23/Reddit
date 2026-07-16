@@ -1,12 +1,12 @@
 from datetime import timedelta
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.constants import next_scrape_for, schedule_tier_for, utc_now
-from app.db.models import PipelineJob, Source
+from app.db.models import PipelineJob, Post, Source, SourcePost
 from app.db.schemas import SourceCreate, SourceUpdate
 from app.repositories.source_repository import get_source_by_key
 from app.services.analytics_service import rebuild_source_analytics_for_today
@@ -86,11 +86,15 @@ def scrape_source(
     try:
         posts = client.fetch_listing(source.source_type, source.identifier, settings.max_posts_per_source)
         cutoff = utc_now() - timedelta(hours=settings.lookback_hours)
+        newest_existing_post_created_at = latest_post_created_at_for_source(db, source.id) if job_type == "scrape_new_posts" else None
         job.posts_found = len(posts)
         reached_old_posts = False
         for data in posts:
             try:
-                if reddit_datetime(data.get("created_utc")) < cutoff:
+                post_created_at = reddit_datetime(data.get("created_utc"))
+                if post_created_at < cutoff:
+                    break
+                if newest_existing_post_created_at and post_created_at <= newest_existing_post_created_at:
                     break
                 post, is_new = upsert_post_from_reddit(db, source, data, job)
                 if is_new:
@@ -123,6 +127,14 @@ def scrape_source(
     finally:
         db.flush()
     return job
+
+
+def latest_post_created_at_for_source(db: Session, source_id: int):
+    return db.scalar(
+        select(func.max(Post.post_created_at))
+        .join(SourcePost, SourcePost.post_id == Post.id)
+        .where(SourcePost.source_id == source_id)
+    )
 
 
 def due_sources(db: Session) -> list[Source]:

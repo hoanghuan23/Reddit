@@ -14,10 +14,10 @@ def get_metrics(db: Session = Depends(get_db), post_id: int | None = None, limit
     return list_metrics(db, limit=limit, post_id=post_id)
 
 
-@router.post("/due/run", response_model=PipelineJobRead | None)
+@router.post("/due/run", response_model=list[PipelineJobRead])
 def run_due_metrics(db: Session = Depends(get_db)):
-    job = update_due_metrics(db)
+    jobs = update_due_metrics(db)
     db.commit()
-    if job is not None:
+    for job in jobs:
         db.refresh(job)
-    return job
+    return jobs

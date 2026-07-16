@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.core.constants import utc_now
-from app.db.models import PipelineJob
+from app.db.models import PipelineJob, Post
 from app.db.schemas import SourceCreate
 from app.services.job_service import create_job
 from app.services.metric_service import update_due_metrics
@@ -117,8 +117,63 @@ def test_run_due_sources_use_scrape_new_posts_job_type(db_session, monkeypatch):
 
 
 def test_update_due_metrics_does_not_create_empty_job(db_session):
-    job = update_due_metrics(db_session)
-    jobs = list(db_session.scalars(select(PipelineJob)))
+    metric_jobs = update_due_metrics(db_session)
+    stored_jobs = list(db_session.scalars(select(PipelineJob)))
 
-    assert job is None
-    assert jobs == []
+    assert metric_jobs == []
+    assert stored_jobs == []
+
+
+def test_update_due_metrics_creates_jobs_by_source(db_session):
+    class FakeRedditClient:
+        def fetch_post_metric(self, permalink):
+            return {
+                "id": "abc123",
+                "title": "Updated",
+                "permalink": "/r/python/comments/abc123/example/",
+                "url": "https://example.com/updated",
+                "score": 20,
+                "num_comments": 4,
+            }
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    post, _ = upsert_post_from_reddit(db_session, source, reddit_post(), scrape_job)
+    post.next_metric_update = utc_now() - timedelta(minutes=1)
+    db_session.commit()
+
+    metric_jobs = update_due_metrics(db_session, FakeRedditClient())
+    db_session.commit()
+
+    assert len(metric_jobs) == 1
+    assert metric_jobs[0].job_type == "update_metrics"
+    assert metric_jobs[0].source_id == source.id
+    assert metric_jobs[0].posts_updated == 1
+    assert post.metric_tier == "high"
+
+
+def test_scrape_new_posts_stops_at_latest_existing_post(db_session):
+    now = utc_now()
+    newest = reddit_post("newest", score=1, comments=1)
+    newest["created_utc"] = (now - timedelta(minutes=10)).timestamp()
+    newer = reddit_post("newer", score=1, comments=1)
+    newer["created_utc"] = (now - timedelta(minutes=5)).timestamp()
+    older = reddit_post("older", score=1, comments=1)
+    older["created_utc"] = (now - timedelta(minutes=20)).timestamp()
+
+    class FakeRedditClient:
+        def fetch_listing(self, source_type, identifier, limit):
+            return [newer, newest, older]
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    upsert_post_from_reddit(db_session, source, newest, scrape_job)
+    db_session.commit()
+
+    job = scrape_source(db_session, source, FakeRedditClient(), job_type="scrape_new_posts")
+    db_session.commit()
+
+    post_ids = set(db_session.scalars(select(Post.reddit_post_id)))
+    assert job.posts_new == 1
+    assert "newer" in post_ids
+    assert "older" not in post_ids

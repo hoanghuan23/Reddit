@@ -11,4 +11,4 @@ router = APIRouter(prefix="/scheduler", tags=["scheduler"])
 @router.post("/run-due", response_model=RunDueResponse)
 def run_due_endpoint(db: Session = Depends(get_db)):
     result = run_due(db)
-    return RunDueResponse(source_jobs=result.source_jobs, metric_job=result.metric_job)
+    return RunDueResponse(source_jobs=result.source_jobs, metric_jobs=result.metric_jobs)

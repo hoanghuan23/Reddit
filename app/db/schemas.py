@@ -133,7 +133,7 @@ class PipelineLogRead(BaseModel):
 
 class RunDueResponse(BaseModel):
     source_jobs: list[PipelineJobRead]
-    metric_job: PipelineJobRead | None = None
+    metric_jobs: list[PipelineJobRead] = Field(default_factory=list)
 
 
 SourceCreateResponse.model_rebuild()

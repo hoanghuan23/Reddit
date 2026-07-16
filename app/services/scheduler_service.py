@@ -14,7 +14,7 @@ from app.services.source_service import due_sources, scrape_source
 @dataclass
 class RunDueResult:
     source_jobs: list[PipelineJob]
-    metric_job: PipelineJob | None
+    metric_jobs: list[PipelineJob]
 
 
 def run_due(db: Session) -> RunDueResult:
@@ -27,9 +27,9 @@ def run_due(db: Session) -> RunDueResult:
         except Exception:
             db.commit()
             continue
-    metric_job = update_due_metrics(db)
+    metric_jobs = update_due_metrics(db)
     db.commit()
-    return RunDueResult(source_jobs=source_jobs, metric_job=metric_job)
+    return RunDueResult(source_jobs=source_jobs, metric_jobs=metric_jobs)
 
 
 class BackgroundScheduler:
