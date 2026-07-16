@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.constants import utc_now
 from app.db.schemas import PipelineJobRead, SourceCreate, SourceCreateResponse, SourceRead, SourceUpdate
 from app.db.session import get_db
 from app.repositories.source_repository import get_source, list_sources
@@ -13,8 +14,10 @@ router = APIRouter(prefix="/sources", tags=["sources"])
 @router.post("", response_model=SourceCreateResponse)
 def create_source(payload: SourceCreate, db: Session = Depends(get_db)) -> SourceCreateResponse:
     source = create_or_update_source(db, payload)
+    job = None
     try:
-        job = scrape_source(db, source)
+        if source.next_scrape is not None and source.next_scrape <= utc_now():
+            job = scrape_source(db, source)
     except RedditClientError as exc:
         db.commit()
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -23,7 +26,8 @@ def create_source(payload: SourceCreate, db: Session = Depends(get_db)) -> Sourc
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     db.commit()
     db.refresh(source)
-    db.refresh(job)
+    if job is not None:
+        db.refresh(job)
     return SourceCreateResponse(source=source, job=job)
 
 

@@ -41,7 +41,6 @@ def create_or_update_source(db: Session, payload: SourceCreate) -> Source:
             source_type=payload.source_type,
             identifier=identifier,
             include_comments=payload.include_comments,
-            schedule_override_minutes=payload.schedule_override_minutes,
             is_active=True,
             is_accessible=True,
             created_at=now,
@@ -51,7 +50,6 @@ def create_or_update_source(db: Session, payload: SourceCreate) -> Source:
         db.add(source)
     else:
         source.include_comments = payload.include_comments
-        source.schedule_override_minutes = payload.schedule_override_minutes
         source.is_active = True
     db.flush()
     return source
@@ -74,10 +72,15 @@ def soft_delete_source(db: Session, source: Source) -> Source:
     return source
 
 
-def scrape_source(db: Session, source: Source, reddit_client: RedditClient | None = None) -> PipelineJob:
+def scrape_source(
+    db: Session,
+    source: Source,
+    reddit_client: RedditClient | None = None,
+    job_type: str = "scrape_posts",
+) -> PipelineJob:
     settings = get_settings()
     client = reddit_client or RedditClient()
-    job = create_job(db, "scrape_new_posts", source.id)
+    job = create_job(db, job_type, source.id)
     mark_job_running(job)
     db.flush()
     try:

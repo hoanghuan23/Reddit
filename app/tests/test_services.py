@@ -1,10 +1,15 @@
 from datetime import timedelta
 
+from sqlalchemy import select
+
 from app.core.constants import utc_now
+from app.db.models import PipelineJob
 from app.db.schemas import SourceCreate
 from app.services.job_service import create_job
+from app.services.metric_service import update_due_metrics
 from app.services.post_service import upsert_comment_from_reddit, upsert_post_from_reddit
-from app.services.source_service import create_or_update_source, normalize_identifier, soft_delete_source
+from app.services.scheduler_service import run_due
+from app.services.source_service import create_or_update_source, normalize_identifier, scrape_source, soft_delete_source
 
 
 def reddit_post(post_id="abc123", score=3, comments=2):
@@ -36,7 +41,7 @@ def test_normalize_identifier():
 
 def test_upsert_post_metric_and_source_mapping(db_session):
     source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
-    job = create_job(db_session, "scrape_new_posts", source.id)
+    job = create_job(db_session, "scrape_posts", source.id)
     post, is_new = upsert_post_from_reddit(db_session, source, reddit_post(), job)
     db_session.commit()
 
@@ -54,7 +59,7 @@ def test_upsert_post_metric_and_source_mapping(db_session):
 
 def test_upsert_deleted_comment_and_soft_delete_source(db_session):
     source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
-    job = create_job(db_session, "scrape_new_posts", source.id)
+    job = create_job(db_session, "scrape_posts", source.id)
     post, _ = upsert_post_from_reddit(db_session, source, reddit_post(), job)
     comment = upsert_comment_from_reddit(
         db_session,
@@ -75,3 +80,45 @@ def test_upsert_deleted_comment_and_soft_delete_source(db_session):
     assert comment.is_deleted is True
     assert comment.author_name is None
     assert source.is_active is False
+
+
+def test_scrape_source_uses_scrape_posts_job_type(db_session):
+    class FakeRedditClient:
+        def fetch_listing(self, source_type, identifier, limit):
+            return []
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    job = scrape_source(db_session, source, FakeRedditClient())
+    db_session.commit()
+
+    assert job.job_type == "scrape_posts"
+    assert job.source_id == source.id
+
+
+def test_run_due_sources_use_scrape_new_posts_job_type(db_session, monkeypatch):
+    class FakeRedditClient:
+        def fetch_listing(self, source_type, identifier, limit):
+            return []
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+
+    from app.services import scheduler_service
+
+    def fake_scrape_source(db, source, reddit_client=None, job_type="scrape_posts"):
+        return scrape_source(db, source, FakeRedditClient(), job_type)
+
+    monkeypatch.setattr(scheduler_service, "scrape_source", fake_scrape_source)
+    result = run_due(db_session)
+    db_session.commit()
+
+    assert len(result.source_jobs) == 1
+    assert result.source_jobs[0].job_type == "scrape_new_posts"
+    assert result.source_jobs[0].source_id == source.id
+
+
+def test_update_due_metrics_does_not_create_empty_job(db_session):
+    job = update_due_metrics(db_session)
+    jobs = list(db_session.scalars(select(PipelineJob)))
+
+    assert job is None
+    assert jobs == []

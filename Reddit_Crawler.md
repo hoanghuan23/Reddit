@@ -821,7 +821,7 @@ Chỉ đặt như vậy khi lỗi cho thấy source thực sự không thể tru
 
 ### Khi Post Đến Hạn Update Metric
 
-1. Tạo hoặc sử dụng job `update_metrics`.
+1. Chỉ tạo job `update_metrics` khi có post đến hạn.
 2. Gọi endpoint theo `reddit_post_id` hoặc permalink.
 3. Cập nhật dữ liệu hiện tại trong `posts` nếu cần.
 4. Ghi snapshot mới vào `post_metrics`.

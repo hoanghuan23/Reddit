@@ -11,7 +11,6 @@ class SourceCreate(BaseModel):
     source_type: SourceType
     identifier: str = Field(min_length=1, max_length=300)
     include_comments: bool = False
-    schedule_override_minutes: int | None = Field(default=None, ge=1)
 
 
 class SourceUpdate(BaseModel):

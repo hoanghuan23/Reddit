@@ -21,7 +21,7 @@ def run_due(db: Session) -> RunDueResult:
     source_jobs: list[PipelineJob] = []
     for source in due_sources(db):
         try:
-            job = scrape_source(db, source)
+            job = scrape_source(db, source, job_type="scrape_new_posts")
             source_jobs.append(job)
             db.commit()
         except Exception:

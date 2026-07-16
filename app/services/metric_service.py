@@ -8,11 +8,13 @@ from app.services.post_service import update_post_metric_from_reddit
 from app.services.reddit_client import RedditClient
 
 
-def update_due_metrics(db: Session, reddit_client: RedditClient | None = None, limit: int = 100) -> PipelineJob:
+def update_due_metrics(db: Session, reddit_client: RedditClient | None = None, limit: int = 100) -> PipelineJob | None:
+    posts = due_posts(db, limit=limit)
+    if not posts:
+        return None
     client = reddit_client or RedditClient()
     job = create_job(db, "update_metrics")
     mark_job_running(job)
-    posts = due_posts(db, limit=limit)
     job.posts_found = len(posts)
     try:
         for post in posts:
