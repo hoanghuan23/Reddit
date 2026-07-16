@@ -4,10 +4,12 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.api import comments, jobs, logs, metrics, posts, scheduler, sources
+from app.core.logging import configure_logging
 from app.db.session import SessionLocal
 from app.services.scheduler_service import BackgroundScheduler
 
 
+configure_logging()
 background_scheduler = BackgroundScheduler()
 
 

@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from urllib.parse import urlparse
 
@@ -13,6 +14,9 @@ from app.services.analytics_service import rebuild_source_analytics_for_today
 from app.services.job_service import create_job, log_warning_or_error, mark_job_done, mark_job_failed, mark_job_running
 from app.services.post_service import upsert_comment_from_reddit, upsert_post_from_reddit
 from app.services.reddit_client import RedditClient, RedditClientError, reddit_datetime
+
+
+logger = logging.getLogger("reddit_api.scraper")
 
 
 def normalize_identifier(source_type: str, identifier: str) -> str:
@@ -83,18 +87,29 @@ def scrape_source(
     job = create_job(db, job_type, source.id)
     mark_job_running(job)
     db.flush()
+    log_action = "scrape bai moi" if job_type == "scrape_new_posts" else "scrape source"
+    logger.info(
+        "Bat dau %s | source=%s id=%s type=%s max_count=%s",
+        log_action,
+        source.identifier,
+        source.id,
+        source.source_type,
+        settings.max_posts_per_source,
+    )
+    skipped_old = 0
     try:
         posts = client.fetch_listing(source.source_type, source.identifier, settings.max_posts_per_source)
         cutoff = utc_now() - timedelta(hours=settings.lookback_hours)
         newest_existing_post_created_at = latest_post_created_at_for_source(db, source.id) if job_type == "scrape_new_posts" else None
         job.posts_found = len(posts)
-        reached_old_posts = False
-        for data in posts:
+        for index, data in enumerate(posts):
             try:
                 post_created_at = reddit_datetime(data.get("created_utc"))
                 if post_created_at < cutoff:
+                    skipped_old = len(posts) - index
                     break
                 if newest_existing_post_created_at and post_created_at <= newest_existing_post_created_at:
+                    skipped_old = len(posts) - index
                     break
                 post, is_new = upsert_post_from_reddit(db, source, data, job)
                 if is_new:
@@ -114,15 +129,40 @@ def scrape_source(
         source.next_scrape = next_scrape_for(utc_now(), source.schedule_tier, source.schedule_override_minutes)
         source.is_accessible = True
         mark_job_done(job)
+        logger.info(
+            "Hoan tat %s | source=%s id=%s found=%s new=%s updated=%s failed=%s skipped_old=%s",
+            log_action,
+            source.identifier,
+            source.id,
+            job.posts_found,
+            job.posts_new,
+            job.posts_updated,
+            job.items_failed,
+            skipped_old,
+        )
     except RedditClientError as exc:
         if exc.permanent and exc.status_code in {403, 404}:
             source.is_accessible = False
         mark_job_failed(job, exc)
         log_warning_or_error(db, "Scrape source thất bại.", job.id, source.id, exc)
+        logger.exception(
+            "Scrape source that bai | source=%s id=%s type=%s error=%s",
+            source.identifier,
+            source.id,
+            source.source_type,
+            exc,
+        )
         raise
     except Exception as exc:
         mark_job_failed(job, exc)
         log_warning_or_error(db, "Scrape source thất bại.", job.id, source.id, exc)
+        logger.exception(
+            "Scrape source that bai | source=%s id=%s type=%s error=%s",
+            source.identifier,
+            source.id,
+            source.source_type,
+            exc,
+        )
         raise
     finally:
         db.flush()
