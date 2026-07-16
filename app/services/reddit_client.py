@@ -92,10 +92,12 @@ class RedditClient:
     def normalise_post_url(self, permalink: str) -> str:
         value = permalink.strip()
         if value.startswith("/"):
-            return f"https://www.reddit.com{value.rstrip('/')}/"
+            path = quote(value.rstrip("/"), safe="/%")
+            return f"https://www.reddit.com{path}/"
         parsed = urlparse(value)
         if parsed.netloc.lower() in {"reddit.com", "www.reddit.com"} or parsed.netloc.lower().endswith(".reddit.com"):
-            return f"https://www.reddit.com{parsed.path.rstrip('/')}/"
+            path = quote(parsed.path.rstrip("/"), safe="/%")
+            return f"https://www.reddit.com{path}/"
         raise RedditClientError("Permalink không phải URL/path Reddit hợp lệ.", permanent=True)
 
     def _get_json(self, url: str, referer: str, params: dict[str, Any] | None = None) -> Any:
