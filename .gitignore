@@ -1,0 +1,7 @@
+.env
+venv/
+__pycache__/
+*.pyc
+data/*.db
+.reddit_cookies_cache.json
+.pytest_cache/
