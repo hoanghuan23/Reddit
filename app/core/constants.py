@@ -9,11 +9,11 @@ METRIC_MINUTES_BY_TIER = {
 }
 
 SCHEDULE_MINUTES_BY_TIER = {
-    1: 30,
-    2: 60,
+    5: 30,
+    4: 60,
     3: 120,
-    4: 240,
-    5: 360,
+    2: 240,
+    1: 360,
 }
 
 
@@ -37,14 +37,14 @@ def metric_tier_for(score: int | None, comments_count: int | None) -> str:
 def schedule_tier_for(total_posts: int, total_comments: int, total_score: int) -> int:
     activity_score = total_posts * 5 + total_comments * 2 + max(total_score, 0)
     if activity_score >= 1000:
-        return 1
+        return 5
     if activity_score >= 500:
-        return 2
+        return 4
     if activity_score >= 200:
         return 3
     if activity_score >= 50:
-        return 4
-    return 5
+        return 2
+    return 1
 
 
 def next_metric_update_for(now: datetime, tier: str, tracking_until: datetime) -> datetime | None:
