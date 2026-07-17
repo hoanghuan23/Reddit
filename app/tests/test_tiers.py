@@ -12,9 +12,9 @@ def test_metric_tiers():
 
 
 def test_schedule_tiers():
-    assert schedule_tier_for(100, 200, 200) == 1
+    assert schedule_tier_for(100, 200, 200) == 5
     assert schedule_tier_for(20, 50, 100) == 3
-    assert schedule_tier_for(0, 0, 0) == 5
+    assert schedule_tier_for(0, 0, 0) == 1
 
 
 def test_next_metric_update_is_capped_by_tracking_until():

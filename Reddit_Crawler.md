@@ -746,32 +746,32 @@ activity_score = (
 )
 ```
 
-Tier 1 là source hoạt động mạnh nhất, tier 5 là yếu nhất.
+Tier 5 là source hoạt động mạnh nhất, tier 1 là yếu nhất.
 
 Ngưỡng ban đầu:
 
 ```python
 if activity_score >= 1000:
-    schedule_tier = 1
+    schedule_tier = 5
 elif activity_score >= 500:
-    schedule_tier = 2
+    schedule_tier = 4
 elif activity_score >= 200:
     schedule_tier = 3
 elif activity_score >= 50:
-    schedule_tier = 4
+    schedule_tier = 2
 else:
-    schedule_tier = 5
+    schedule_tier = 1
 ```
 
 Thời gian crawl source gợi ý:
 
 ```python
 minutes_by_schedule_tier = {
-    1: 30,
-    2: 60,
+    5: 30,
+    4: 60,
     3: 120,
-    4: 240,
-    5: 360,
+    2: 240,
+    1: 360,
 }
 ```
 
