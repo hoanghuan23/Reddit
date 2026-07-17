@@ -23,13 +23,13 @@ def utc_now() -> datetime:
 
 def metric_tier_for(score: int | None, comments_count: int | None) -> str:
     engagement = (comments_count or 0) * 5 + max(score or 0, 0) * 2
-    if engagement >= 100:
+    if engagement >= 300:
         return "hot"
-    if engagement >= 50:
+    if engagement >= 150:
         return "high"
-    if engagement >= 20:
+    if engagement >= 60:
         return "medium"
-    if engagement >= 5:
+    if engagement >= 15:
         return "low"
     return "very_low"
 
