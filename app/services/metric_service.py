@@ -13,7 +13,12 @@ from app.services.reddit_client import RedditClient
 logger = logging.getLogger("reddit_api.metrics")
 
 
-def update_due_metrics(db: Session, reddit_client: RedditClient | None = None, limit: int = 100) -> list[PipelineJob]:
+def update_due_metrics(
+    db: Session,
+    reddit_client: RedditClient | None = None,
+    limit: int = 100,
+    commit_per_source: bool = False,
+) -> list[PipelineJob]:
     client = reddit_client or RedditClient()
     jobs: list[PipelineJob] = []
     for source_id in due_metric_source_ids(db):
@@ -29,6 +34,8 @@ def update_due_metrics(db: Session, reddit_client: RedditClient | None = None, l
                     source_id,
                     expired_count,
                 )
+                if commit_per_source:
+                    db.commit()
             continue
         job = create_job(db, "update_metrics", source_id)
         mark_job_running(job)
@@ -73,6 +80,8 @@ def update_due_metrics(db: Session, reddit_client: RedditClient | None = None, l
             raise
         finally:
             db.flush()
+            if commit_per_source:
+                db.commit()
         jobs.append(job)
     return jobs
 

@@ -39,7 +39,7 @@ def run_due(db: Session) -> RunDueResult:
             )
             db.commit()
             continue
-    metric_jobs = update_due_metrics(db)
+    metric_jobs = update_due_metrics(db, commit_per_source=True)
     db.commit()
     logger.info(
         "Scheduler hoan tat chu ky | sources_processed=%s metrics_jobs=%s",

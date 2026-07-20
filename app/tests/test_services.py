@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.core.constants import utc_now
-from app.db.models import PipelineJob, Post
+from app.db.models import PipelineJob, PipelineLog, Post
 from app.db.schemas import SourceCreate
 from app.services.job_service import create_job
 from app.services.metric_service import update_due_metrics
@@ -150,6 +150,29 @@ def test_update_due_metrics_creates_jobs_by_source(db_session):
     assert metric_jobs[0].source_id == source.id
     assert metric_jobs[0].posts_updated == 1
     assert post.metric_tier == "high"
+
+
+def test_update_due_metrics_logs_failed_posts(db_session):
+    class FailingRedditClient:
+        def fetch_post_metric(self, permalink):
+            raise RuntimeError("reddit fetch failed")
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    post, _ = upsert_post_from_reddit(db_session, source, reddit_post(), scrape_job)
+    post.next_metric_update = utc_now() - timedelta(minutes=1)
+    db_session.commit()
+
+    metric_jobs = update_due_metrics(db_session, FailingRedditClient(), commit_per_source=True)
+
+    logs = list(db_session.scalars(select(PipelineLog)))
+    assert len(metric_jobs) == 1
+    assert metric_jobs[0].items_failed == 1
+    assert logs[0].job_id == metric_jobs[0].id
+    assert logs[0].source_id == source.id
+    assert logs[0].message == "Không update được metric cho post."
+    assert logs[0].error_type == "RuntimeError"
+    assert logs[0].error_details == "reddit fetch failed"
 
 
 def test_scrape_new_posts_stops_at_latest_existing_post(db_session):
