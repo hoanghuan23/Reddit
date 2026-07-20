@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     lookback_hours: int = 24
     request_timeout_seconds: int = 30
     max_posts_per_source: int = 100
+    metrics_update_batch_size: int = 25
+    metrics_request_delay_seconds: float = 0.75
     cookie_cache_ttl_seconds: int = 12 * 60 * 60
     reddit_user_agent: str = "linux:reddit-crawler:v1.0"
     scheduler_poll_seconds: int = 60

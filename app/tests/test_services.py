@@ -11,6 +11,7 @@ from app.services.metric_service import update_due_metrics
 from app.services.post_service import upsert_comment_from_reddit, upsert_post_from_reddit
 from app.services.scheduler_service import run_due
 from app.services.source_service import create_or_update_source, normalize_identifier, scrape_source, soft_delete_source
+from app.services.reddit_client import RedditClientError
 
 
 def reddit_post(post_id="abc123", score=3, comments=2):
@@ -150,7 +151,112 @@ def test_update_due_metrics_creates_jobs_by_source(db_session):
     assert metric_jobs[0].job_type == "update_metrics"
     assert metric_jobs[0].source_id == source.id
     assert metric_jobs[0].posts_updated == 1
-    assert post.metric_tier == "high"
+    assert post.metric_tier == "medium"
+
+
+def test_update_due_metrics_respects_batch_size_across_runs(db_session):
+    class FakeRedditClient:
+        def fetch_post_metric(self, permalink):
+            if "/first/" in permalink:
+                return {
+                    "id": "first",
+                    "title": "First updated",
+                    "permalink": "/r/python/comments/first/example/",
+                    "url": "https://example.com/first",
+                    "score": 10,
+                    "num_comments": 2,
+                }
+            return {
+                "id": "second",
+                "title": "Second updated",
+                "permalink": "/r/python/comments/second/example/",
+                "url": "https://example.com/second",
+                "score": 12,
+                "num_comments": 3,
+            }
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    first_post, _ = upsert_post_from_reddit(db_session, source, reddit_post("first"), scrape_job)
+    second_post, _ = upsert_post_from_reddit(db_session, source, reddit_post("second"), scrape_job)
+    first_post.next_metric_update = utc_now() - timedelta(minutes=2)
+    second_post.next_metric_update = utc_now() - timedelta(minutes=1)
+    db_session.commit()
+
+    first_jobs = update_due_metrics(db_session, FakeRedditClient(), limit=1, request_delay_seconds=0)
+    second_jobs = update_due_metrics(db_session, FakeRedditClient(), limit=1, request_delay_seconds=0)
+    db_session.commit()
+
+    assert len(first_jobs) == 1
+    assert len(second_jobs) == 1
+    assert first_jobs[0].posts_updated == 1
+    assert second_jobs[0].posts_updated == 1
+    assert first_post.last_metric_update is not None
+    assert second_post.last_metric_update is not None
+
+
+def test_update_due_metrics_stops_on_rate_limit_and_logs_failure(db_session, monkeypatch):
+    sleep_calls = []
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("app.services.metric_service.time.sleep", fake_sleep)
+
+    class RateLimitedRedditClient:
+        def __init__(self):
+            self.calls = 0
+
+        def fetch_post_metric(self, permalink):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "id": "first",
+                    "title": "First updated",
+                    "permalink": "/r/python/comments/first/example/",
+                    "url": "https://example.com/first",
+                    "score": 10,
+                    "num_comments": 2,
+                }
+            raise RedditClientError("rate limited", 429, retry_after=4)
+
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    first_post, _ = upsert_post_from_reddit(db_session, source, reddit_post("first"), scrape_job)
+    second_post, _ = upsert_post_from_reddit(db_session, source, reddit_post("second"), scrape_job)
+    first_post.next_metric_update = utc_now() - timedelta(minutes=2)
+    second_post.next_metric_update = utc_now() - timedelta(minutes=1)
+    db_session.commit()
+
+    metric_jobs = update_due_metrics(db_session, RateLimitedRedditClient(), request_delay_seconds=0)
+
+    logs = list(db_session.scalars(select(PipelineLog)))
+    assert len(metric_jobs) == 1
+    assert metric_jobs[0].posts_updated == 1
+    assert metric_jobs[0].items_failed == 1
+    assert len(logs) == 1
+    assert logs[0].message == "Bị rate limited khi update metric cho post."
+    assert logs[0].log_level == "WARNING"
+    assert sleep_calls == [4]
+    assert first_post.last_metric_update is not None
+    assert second_post.metric_tier == "low"
+
+
+def test_update_due_metrics_skips_when_running_job_exists(db_session):
+    source = create_or_update_source(db_session, SourceCreate(source_type="subreddit", identifier="python"))
+    scrape_job = create_job(db_session, "scrape_posts", source.id)
+    post, _ = upsert_post_from_reddit(db_session, source, reddit_post(), scrape_job)
+    post.next_metric_update = utc_now() - timedelta(minutes=1)
+    running_job = create_job(db_session, "update_metrics", source.id)
+    running_job.status = "running"
+    db_session.commit()
+
+    metric_jobs = update_due_metrics(db_session)
+
+    stored_jobs = list(db_session.scalars(select(PipelineJob)))
+    assert metric_jobs == []
+    assert len(stored_jobs) == 2
+    assert all(job.job_type != "update_metrics" or job.status == "running" for job in stored_jobs)
 
 
 def test_update_due_metrics_logs_failed_posts(db_session):
