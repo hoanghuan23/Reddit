@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -172,7 +173,11 @@ def test_update_due_metrics_logs_failed_posts(db_session):
     assert logs[0].source_id == source.id
     assert logs[0].message == "Không update được metric cho post."
     assert logs[0].error_type == "RuntimeError"
-    assert logs[0].error_details == "reddit fetch failed"
+    error_details = json.loads(logs[0].error_details)
+    assert set(error_details) == {"post_id", "permalink", "error"}
+    assert error_details["post_id"] == post.id
+    assert error_details["permalink"] == "https://www.reddit.com/r/python/comments/abc123/example/"
+    assert error_details["error"] == "reddit fetch failed"
 
 
 def test_scrape_new_posts_stops_at_latest_existing_post(db_session):

@@ -55,7 +55,17 @@ def update_due_metrics(
                     job.posts_updated += 1
                 except Exception as exc:
                     job.items_failed += 1
-                    log_warning_or_error(db, "Không update được metric cho post.", job.id, source_id, exc)
+                    log_warning_or_error(
+                        db,
+                        "Không update được metric cho post.",
+                        job.id,
+                        source_id,
+                        exc,
+                        context={
+                            "post_id": post.id,
+                            "permalink": post.permalink,
+                        },
+                    )
                     continue
             mark_job_done(job)
             logger.info(

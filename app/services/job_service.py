@@ -1,3 +1,6 @@
+import json
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.core.constants import utc_now
@@ -44,6 +47,7 @@ def log_warning_or_error(
     source_id: int | None = None,
     exc: Exception | None = None,
     level: str = "ERROR",
+    context: dict[str, Any] | None = None,
 ) -> PipelineLog:
     log = PipelineLog(
         job_id=job_id,
@@ -51,9 +55,18 @@ def log_warning_or_error(
         log_level=level,
         message=message,
         error_type=type(exc).__name__ if exc else None,
-        error_details=str(exc) if exc else None,
+        error_details=format_error_details(exc, context),
         created_at=utc_now(),
     )
     db.add(log)
     db.flush()
     return log
+
+
+def format_error_details(exc: Exception | None = None, context: dict[str, Any] | None = None) -> str | None:
+    if not context:
+        return str(exc) if exc else None
+    details = dict(context)
+    if exc:
+        details["error"] = str(exc)
+    return json.dumps(details, ensure_ascii=False, default=str)
